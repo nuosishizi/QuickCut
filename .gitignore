@@ -19,6 +19,9 @@ Modules/EditorRuntime/media/lib/
 Modules/EditorRuntime/editor-desktop/macos/QuickCut
 
 # local secrets — never commit API keys
+.env
+.env.*
+!.env.example
 key.txt
 *-api-key.txt
 secrets/

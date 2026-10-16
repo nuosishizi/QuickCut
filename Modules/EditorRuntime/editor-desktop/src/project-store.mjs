@@ -56,6 +56,35 @@ export function createProject(input = {}) {
   });
 }
 
+const SENSITIVE_PROJECT_KEYS = new Set([
+  "groqKey",
+  "groqApiKey",
+  "deepgramKey",
+  "deepgramApiKey",
+  "geminiKey",
+  "geminiApiKey",
+  "vertexKey",
+  "vertexApiKey",
+  "vertexServiceAccountJson",
+  "serviceAccountJson",
+  "apiKey",
+  "api_key",
+  "private_key",
+  "access_token",
+  "client_secret",
+]);
+
+export function stripSensitiveProjectData(value) {
+  if (Array.isArray(value)) return value.map(stripSensitiveProjectData);
+  if (!value || typeof value !== "object") return value;
+  const cleaned = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (SENSITIVE_PROJECT_KEYS.has(key)) continue;
+    cleaned[key] = stripSensitiveProjectData(child);
+  }
+  return cleaned;
+}
+
 export function saveProjectSnapshot(input = {}) {
   const id = validateId(input.projectId || input.data?.projectId);
   const directory = projectDirectory(id);
@@ -65,7 +94,7 @@ export function saveProjectSnapshot(input = {}) {
     previous = JSON.parse(fs.readFileSync(projectFile(id), "utf8"));
   } catch {}
   const now = new Date().toISOString();
-  const data = { ...(input.data || {}), projectId: id };
+  const data = { ...stripSensitiveProjectData(input.data || {}), projectId: id };
   const firstVideo = [data.video, ...(data.videoLayers || [])].find(Boolean);
   const project = {
     ...previous,
@@ -360,18 +389,27 @@ export const stageMedia = stageProjectAsset;
 export const projectStoragePath = projectDirectory;
 export const appSupportRoot = supportRoot;
 
+const BACKUP_ALLOWED_ROOTS = ["projects", "fonts", "caption-presets.json"];
+
 function archiveEntriesSafe(archive) {
   for (const entry of archiveEntries(archive)) {
     const normalized = String(entry || "").replace(/\\/g, "/");
-    if (path.isAbsolute(normalized) || normalized.split("/").includes(".."))
+    const segments = normalized.split("/").filter(Boolean);
+    if (
+      path.isAbsolute(normalized) ||
+      segments.includes("..") ||
+      segments[0] === "secrets" ||
+      segments.includes(".quickcut-keystore.key")
+    ) {
       throw new Error("备份包路径不安全，已停止恢复。");
+    }
   }
 }
 
 export function exportBackup(destination) {
   if (!destination) return null;
-  const items = ["projects", "fonts", "caption-presets.json"].filter((name) =>
-    fs.existsSync(path.join(supportRoot(), name)),
+  const items = BACKUP_ALLOWED_ROOTS.filter(
+    (name) => name !== "secrets" && fs.existsSync(path.join(supportRoot(), name)),
   );
   if (!items.length) throw new Error("目前没有可备份的工程。");
   return createArchive(destination, items, supportRoot());
@@ -386,6 +424,7 @@ export function importBackup(archive) {
   );
   fs.mkdirSync(destination, { recursive: true, mode: 0o700 });
   extractArchive(archive, destination);
+  fs.rmSync(path.join(destination, "secrets"), { recursive: true, force: true });
   const incomingFonts = path.join(destination, "fonts");
   if (fs.existsSync(incomingFonts))
     fs.cpSync(incomingFonts, path.join(supportRoot(), "fonts"), {
@@ -446,11 +485,13 @@ export function importBackup(archive) {
       };
       restored.id = id;
       restored.thumbnailPath = "";
-      restored.data = rebase({
-        ...(restored.data || {}),
-        projectId: id,
-        projectName: restored.name,
-      });
+      restored.data = stripSensitiveProjectData(
+        rebase({
+          ...(restored.data || {}),
+          projectId: id,
+          projectName: restored.name,
+        }),
+      );
       fs.writeFileSync(restoredFile, JSON.stringify(restored, null, 2), {
         mode: 0o600,
       });

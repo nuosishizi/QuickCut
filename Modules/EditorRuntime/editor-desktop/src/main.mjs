@@ -99,6 +99,7 @@ import {
   saveProjectSnapshot,
   stageProjectAssetAsync,
   projectStoragePath,
+  stripSensitiveProjectData,
 } from "./project-store.mjs";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -171,8 +172,17 @@ function safe(action) {
 
 
 function saveProjectFile(data, existingPath = "") {
-  const destination = existingPath || chooseOutput("快剪工程.zpe", "zpe");
+  let validExisting = "";
+  if (existingPath && typeof existingPath === "string") {
+    const resolved = path.resolve(existingPath);
+    const ext = path.extname(resolved).toLowerCase();
+    if ((ext === ".zpe" || ext === ".json") && !resolved.includes("\0")) {
+      validExisting = resolved;
+    }
+  }
+  const destination = validExisting || chooseOutput("快剪工程.zpe", "zpe");
   if (!destination) return null;
+  const safeData = stripSensitiveProjectData(data || {});
   fs.writeFileSync(
     destination,
     JSON.stringify(
@@ -180,7 +190,7 @@ function saveProjectFile(data, existingPath = "") {
         format: "SubtitleProofreaderEditor",
         version: 1,
         savedAt: new Date().toISOString(),
-        ...data,
+        ...safeData,
       },
       null,
       2,
@@ -329,10 +339,45 @@ function mediaAnalysisStatus(jobId) {
   return { ...job };
 }
 
+let lastClientActivityAt = Date.now();
+let earlyWindowExit = false;
+let windowCloseGraceTimer = null;
+
+function isAllowedLocalOrigin(origin, secFetchSite = "") {
+  if (String(secFetchSite || "").toLowerCase() === "cross-site") return false;
+  if (!origin) return true;
+  if (origin === "null") return true;
+  try {
+    const parsed = new URL(String(origin));
+    const hostOk =
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "[::1]";
+    const portOk = !serverPort || String(parsed.port) === String(serverPort);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && hostOk && portOk;
+  } catch {
+    return false;
+  }
+}
+
 function startAssetServer() {
   return new Promise((resolve, reject) => {
     const server = http.createServer((request, response) => {
-      response.setHeader("Access-Control-Allow-Origin", "*");
+      const origin = String(request.headers.origin || "");
+      const secFetchSite = String(request.headers["sec-fetch-site"] || "");
+      if (!isAllowedLocalOrigin(origin, secFetchSite)) {
+        response.writeHead(403, { "Content-Type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, error: { message: "Forbidden cross-origin request", code: "FORBIDDEN" } }));
+        return;
+      }
+      const allowedOrigin =
+        origin && origin !== "null"
+          ? origin
+          : serverPort
+            ? `http://127.0.0.1:${serverPort}`
+            : "http://127.0.0.1";
+      response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+      response.setHeader("Vary", "Origin");
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
       response.setHeader("Access-Control-Allow-Headers", "Content-Type");
       if (request.method === "OPTIONS") {
@@ -341,6 +386,28 @@ function startAssetServer() {
         return;
       }
       const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+      if (request.method === "POST" && requestUrl.pathname === "/heartbeat") {
+        lastClientActivityAt = Date.now();
+        if (windowCloseGraceTimer) {
+          clearTimeout(windowCloseGraceTimer);
+          windowCloseGraceTimer = null;
+        }
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      if (request.method === "POST" && requestUrl.pathname === "/window-closed") {
+        if (earlyWindowExit && !embeddedInNativeShell && process.env.QUICKCUT_NO_WINDOW !== "1") {
+          if (windowCloseGraceTimer) clearTimeout(windowCloseGraceTimer);
+          const closedAt = Date.now();
+          windowCloseGraceTimer = setTimeout(() => {
+            if (lastClientActivityAt <= closedAt) requestExit();
+          }, 4000);
+        }
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       if (
         request.method === "PUT" &&
         requestUrl.pathname === `/upload/${uploadSecret}`
@@ -396,6 +463,11 @@ function startAssetServer() {
         return;
       }
       if (request.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "/index.html")) {
+        lastClientActivityAt = Date.now();
+        if (windowCloseGraceTimer) {
+          clearTimeout(windowCloseGraceTimer);
+          windowCloseGraceTimer = null;
+        }
         response.setHeader("Content-Type", "text/html; charset=utf-8");
         response.setHeader("Cache-Control", "no-store");
         response.writeHead(200);
@@ -417,6 +489,7 @@ function startAssetServer() {
         return;
       }
       if (request.method === "POST" && requestUrl.pathname.startsWith("/rpc/")) {
+        lastClientActivityAt = Date.now();
         const name = decodeURIComponent(requestUrl.pathname.slice(5));
         let body = "";
         request.setEncoding("utf8");
@@ -502,6 +575,13 @@ const bridgeScript = `<script>
       if (prop === 'then') return undefined;
       return (...args) => rpc(prop, args);
     }
+  });
+  const beat = () => {
+    try { navigator.sendBeacon?.('/heartbeat'); } catch {}
+  };
+  setInterval(beat, 5000);
+  window.addEventListener('pagehide', () => {
+    try { navigator.sendBeacon?.('/window-closed'); } catch {}
   });
   if (${isWindows ? "true" : "false"}) {
     document.documentElement.dataset.platform = 'windows';
@@ -1674,16 +1754,26 @@ nativeMethods = {
     return directory;
   }),
   writeCaptionRaster: safe((input = {}) => {
-    const directory = String(input.directory || "").trim();
-    if (!directory || !directory.includes("caption-raster-"))
+    const rawDir = String(input.directory || "").trim();
+    const tempBase = path.resolve(supportRoot(), "temp");
+    const directory = rawDir ? path.resolve(rawDir) : "";
+    if (
+      !directory ||
+      !inside(tempBase, directory) ||
+      !path.basename(directory).startsWith("caption-raster-")
+    ) {
       throw new Error("字幕渲染目录无效。");
+    }
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const name = String(input.name || `caption-${crypto.randomUUID().slice(0, 8)}.png`)
+    const safeBase = path
+      .basename(String(input.name || `caption-${crypto.randomUUID().slice(0, 8)}.png`))
       .replace(/[^\w.-]+/g, "_");
-    const destination = path.join(directory, name);
+    const name = safeBase.toLowerCase().endsWith(".png") ? safeBase : `${safeBase}.png`;
+    const destination = path.resolve(directory, name);
+    if (!inside(directory, destination)) throw new Error("字幕渲染路径无效。");
     const raw = String(input.dataUrl || "").replace(/^data:image\/png;base64,/i, "");
     if (!raw) throw new Error("字幕画面为空。");
-    fs.writeFileSync(destination, Buffer.from(raw, "base64"));
+    fs.writeFileSync(destination, Buffer.from(raw, "base64"), { mode: 0o600 });
     return destination;
   }),
   fontCatalog: safe((query) => fontCatalog(query)),
@@ -1738,12 +1828,14 @@ if (!embeddedInNativeShell && process.env.QUICKCUT_NO_WINDOW !== "1") {
     const startedAt = Date.now();
     windowProcess.on("exit", () => {
       if (Date.now() - startedAt < 3000) {
-        console.log("编辑器窗口已打开。关闭这个控制台即可退出后台。");
+        earlyWindowExit = true;
+        console.log("编辑器窗口已打开。关闭浏览器窗口或控制台即可退出后台。");
         return;
       }
       requestExit();
     });
   } else {
+    earlyWindowExit = true;
     console.log(
       isWindows
         ? "未找到 Edge，已在默认浏览器中打开编辑器。关闭这个控制台即可退出。"

@@ -45,7 +45,8 @@ run_build() {
     -scheme QuickCut \
     -configuration "$config" \
     -derivedDataPath "$DERIVED" \
-    ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+    ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+    MACOSX_DEPLOYMENT_TARGET=13.0 \
     CODE_SIGNING_ALLOWED=NO \
     "$@" \
     clean build 2>&1 | /usr/bin/tee "$LOG"

@@ -87,7 +87,7 @@ export function buildExportGraph(config, info) {
     const pushGap = (duration) => {
       const label = `[vgap${gapIndex}]`;
       graph.push(
-        `color=c=black:s=${size}:r=${fps}:d=${Math.max(0.02, duration).toFixed(5)},format=yuv420p${label}`,
+        `color=c=black:s=${size}:r=${fps}:d=${Math.max(0.02, duration).toFixed(5)},fps=${fps},format=yuv420p,settb=AVTB${label}`,
       );
       labels.push(label);
       gapIndex += 1;
@@ -104,7 +104,7 @@ export function buildExportGraph(config, info) {
         );
         if (start > cursor + 0.005) pushGap(start - cursor);
         graph.push(
-          `[0:v]trim=start=${sourceStart.toFixed(5)}:end=${sourceEnd.toFixed(5)},setpts=(PTS-STARTPTS)/${speed.toFixed(4)},${oriented.filters.join(",")},format=yuv420p[vcut${index}]`,
+          `[0:v]trim=start=${sourceStart.toFixed(5)}:end=${sourceEnd.toFixed(5)},setpts=(PTS-STARTPTS)/${speed.toFixed(4)},fps=${fps},${oriented.filters.join(",")},format=yuv420p,settb=AVTB[vcut${index}]`,
         );
         labels.push(`[vcut${index}]`);
         cursor = Math.max(cursor, end);
@@ -333,7 +333,7 @@ export function buildExportGraph(config, info) {
       );
     }
   } else graph.push(`${gradedInput}${filters.join(",")}[main]`);
-  graph.push(`color=c=black:s=${width}x${height}:r=${fps}[base]`);
+  graph.push(`color=c=black:s=${width}x${height}:r=${fps}:d=${outputDuration.toFixed(5)}[base]`);
   const x = `(W-w)/2+${Math.round(Number(transform.x || 0))}`;
   const y = `(H-h)/2+${Math.round(Number(transform.y || 0))}`;
   let layer = 0;
@@ -415,8 +415,10 @@ export function buildExportGraph(config, info) {
       "format=rgba",
       `colorchannelmixer=aa=${Math.max(0, Math.min(1, Number(image.opacity ?? 1))).toFixed(3)}`,
     );
-    if (image.enterAnimation || image.exitAnimation)
+    if (image._quickCutCaptionConcat || image.enterAnimation || image.exitAnimation)
       imageFilters.push(`fps=${Math.max(1, Number(config.fps || info.frameRate || 30)).toFixed(3)}`);
+    if (!image._quickCutCaptionConcat)
+      imageFilters.push(`trim=duration=${outputDuration.toFixed(5)}`);
     if (image.enterAnimation) {
       const duration = Math.max(0.15, Number(image.enterDuration || 0.45));
       imageFilters.push(
@@ -801,7 +803,7 @@ function beginExportJob(config, info, job) {
       const rasterized = process.platform === "darwin" && prepareSharedCaptionRaster(config);
       if (!rasterized) config.captionAssPath = createAssSubtitleFile(config);
     }
-    if (captionRasterItems(config).length >= 2) {
+    if (captionRasterItems(config).length >= 1) {
       job.message = "正在合并字幕叠层…";
       try {
         composeCaptionRasterConcat(config, info);
@@ -987,6 +989,7 @@ function beginExportJob(config, info, job) {
         config.captionRastersViaMovie = true;
         config.forceFilterComplexScript = true;
         extraInputs.length = 0;
+        if (hasDenoisedMainAudio) extraInputs.push("-i", config.mainAudioPath);
         extraInputs.push(...collectExportExtraInputs(config).extraInputs);
         built = buildExportGraph(config, info);
         launch(encoder, rest, decodeKind);
@@ -1143,7 +1146,7 @@ function monitorExport(child, job, config, info, retry = null) {
   };
   refreshExportJob(job);
   const stallWatch = setInterval(() => {
-    if (abandoned() || ["completed", "failed", "cancelled"].includes(job.state) || job.frameProgress) {
+    if (abandoned() || ["completed", "failed", "cancelled"].includes(job.state)) {
       clearInterval(stallWatch);
       return;
     }

@@ -382,9 +382,23 @@ export function preferredExportDecodeKind(encoder, hardwareDecode = "") {
   return "";
 }
 
+export const EXPORT_MIDSTREAM_STALL_MS = 45_000;
+
 export function exportIsStalled(job, now = Date.now(), limit) {
-  if (!job || job.frameProgress) return false;
+  if (!job) return false;
   if (!["exporting", "preparing"].includes(String(job.state || ""))) return false;
+  if (job.frameProgress) {
+    const lastProgress = Number(job.lastProgressAt || 0);
+    if (!lastProgress) return false;
+    const midLimit = Number(
+      limit > 0
+        ? limit
+        : isHardwareEncoder(job.encoder)
+          ? EXPORT_MIDSTREAM_STALL_MS
+          : EXPORT_SOFTWARE_STALL_MS,
+    );
+    return now - lastProgress >= midLimit;
+  }
   const last = Number(job.lastProgressAt || job.startedAt || now);
   const wait = Number(limit > 0 ? limit : exportStallLimit(job));
   return now - last >= wait;
@@ -458,9 +472,10 @@ export function videoEncodeArgs(encoder, options = {}) {
 
 export function run(binary, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const { lowPriority = false, ...spawnOptions } = options;
+    const { lowPriority = false, timeoutMs = 180_000, ...spawnOptions } = options;
     const child = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
       ...spawnOptions,
     });
     if (lowPriority && child.pid)
@@ -469,16 +484,33 @@ export function run(binary, args, options = {}) {
       } catch {}
     const stdout = [];
     let stderr = "";
+    let settled = false;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            forceKillProcess(child);
+            reject(new Error(`媒体处理超时（>${Math.round(timeoutMs / 1000)}s）`));
+          }, timeoutMs)
+        : null;
     child.stdout?.on("data", (chunk) => stdout.push(chunk));
     child.stderr?.on("data", (chunk) => {
       stderr = (stderr + chunk.toString()).slice(-12000);
     });
-    child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0
-        ? resolve(Buffer.concat(stdout))
-        : reject(new Error(stderr.trim() || `媒体处理失败（${code}）`)),
-    );
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (code === 0) resolve(Buffer.concat(stdout));
+      else reject(new Error(stderr.trim() || `媒体处理失败（${code}）`));
+    });
   });
 }
 
@@ -908,7 +940,7 @@ export function composeCaptionRasterConcat(config = {}, info = {}) {
   const rasters = captionRasterItems(config).sort(
     (left, right) => Number(left.start || 0) - Number(right.start || 0),
   );
-  if (rasters.length < 2) return "";
+  if (rasters.length < 1) return "";
   const width = Math.max(2, Math.round(Number(config.width || info.width || 1080)));
   const height = Math.max(2, Math.round(Number(config.height || info.height || 1920)));
   const duration = Math.max(0.04, Number(config.outputDuration || info.duration || 1));

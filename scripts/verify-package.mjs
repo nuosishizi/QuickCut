@@ -30,7 +30,7 @@ for (const file of [node, ffmpeg, ffprobe, win ? path.join(root, '快剪.exe') :
   assert.ok(fs.existsSync(file), `Missing packaged component: ${file}`);
   if (!win) assert.ok(fs.statSync(file).mode & 0o111, `Not executable: ${file}`);
 }
-assert.equal(run(node, ['--version']).trim(), 'v22.18.0');
+assert.equal(run(node, ['--version']).trim(), 'v22.23.3');
 run(ffprobe, ['-version']);
 const filters = run(ffmpeg, ['-hide_banner', '-filters']);
 for (const filter of ['subtitles', 'afftdn', 'arnndn', 'crystalizer', 'deesser']) assert.match(filters, new RegExp(`\\b${filter}\\b`));
@@ -67,7 +67,7 @@ try {
   const project = await rpc('createProject', [{ name: 'Package smoke', ratio: '16:9' }]);
   assert.equal((await rpc('loadProject', [project.id])).id, project.id);
   await rpc('deleteProject', [project.id]);
-  console.log(JSON.stringify({ verified: true, version: expected, platform: process.platform, arch: process.arch, node: '22.18.0', media: 'H264/AAC + ASS + denoise', health: true, projectRpc: true }));
+  console.log(JSON.stringify({ verified: true, version: expected, platform: process.platform, arch: process.arch, node: '22.23.3', media: 'H264/AAC + ASS + denoise', health: true, projectRpc: true }));
 } finally {
   if (child.exitCode === null) { const stopped = once(child, 'exit'); child.kill(); await stopped; }
   fs.rmSync(temp, { recursive: true, force: true });

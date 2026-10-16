@@ -198,6 +198,7 @@ struct EditorLauncherView: View {
             }
         }
         .onAppear { model.startIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
     }
 }
 

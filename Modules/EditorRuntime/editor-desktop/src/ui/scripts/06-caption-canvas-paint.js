@@ -420,22 +420,27 @@ function captionTextLayout() {
         const api = captionTextLayout();
         const highlightOn = style.highlightEnabled !== false;
         const images = [];
-        let serial = 0;
-        for (const caption of captions) {
-          const segments =
+        const frame = document.createElement("canvas");
+        frame.width = frameW;
+        frame.height = frameH;
+        const ctx = frame.getContext("2d");
+        const planned = captions.map((caption) => ({
+          caption,
+          segments: (
             typeof api.captionHighlightSegments === "function"
               ? api.captionHighlightSegments(caption, highlightOn)
-              : [{ start: Number(caption.start || 0), end: Number(caption.end || 0) }];
+              : [{ start: Number(caption.start || 0), end: Number(caption.end || 0) }]
+          ).filter((seg) => Number(seg.end || seg.start || 0) > Number(seg.start || 0) + 0.01),
+        }));
+        const totalSegments = planned.reduce((sum, item) => sum + item.segments.length, 0);
+        let serial = 0;
+        for (const { caption, segments } of planned) {
           for (const segment of segments) {
             const start = Number(segment.start || 0);
             const end = Number(segment.end || start);
             if (end <= start + 0.01) continue;
             const shot = paintCaptionFrame(caption, style, start + 0.001, boxWidth, scale);
             if (!shot?.canvas) continue;
-            const frame = document.createElement("canvas");
-            frame.width = frameW;
-            frame.height = frameH;
-            const ctx = frame.getContext("2d");
             ctx.clearRect(0, 0, frameW, frameH);
             ctx.drawImage(
               shot.canvas,
@@ -448,6 +453,11 @@ function captionTextLayout() {
               dataUrl: frame.toDataURL("image/png"),
             });
             serial += 1;
+            if (serial % 6 === 0 && totalSegments > 6) {
+              const statusEl = $("exportStatus");
+              if (statusEl) statusEl.textContent = `正在按预览渲染字幕 (${serial}/${totalSegments})…`;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
             images.push({
               path: dest,
               start,

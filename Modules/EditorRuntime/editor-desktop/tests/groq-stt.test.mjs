@@ -10,6 +10,7 @@ delete process.env.GROQ_API_KEY;
 
 const {
   clearGroqApiKey,
+  getGroqApiKey,
   groqKeyStatus,
   parseDeepgramTranscription,
   parseGeminiTranscription,
@@ -28,6 +29,7 @@ const {
   filterSpeechLanguages,
   SPEECH_LANGUAGES,
 } = await import("../src/whisper.mjs");
+const { stripSensitiveProjectData } = await import("../src/project-store.mjs");
 
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
@@ -72,7 +74,7 @@ test("Groq keeps coherent speech segments and drops no-speech hallucinations", (
   assert.match(segments[0].text, /The Bible doesn't just say/);
 });
 
-test("Groq key is stored locally and never returned in full", () => {
+test("Groq key is stored locally encrypted at rest, auto-migrates legacy plaintext, and is never returned in full", () => {
   assert.equal(canTranscribe(), false);
   assert.equal(groqKeyStatus().configured, false);
   const saved = saveGroqApiKey("  gsk_test_quickcut_secret_key_12345  ");
@@ -86,7 +88,26 @@ test("Groq key is stored locally and never returned in full", () => {
   assert.equal(status.installed, true);
   assert.equal(canTranscribe(), true);
   const file = path.join(scratch, "secrets", "groq-api-key.txt");
-  assert.equal(fs.readFileSync(file, "utf8").trim(), "gsk_test_quickcut_secret_key_12345");
+  const rawStored = fs.readFileSync(file, "utf8").trim();
+  assert.match(rawStored, /^qc-enc-v1:/, "secret file must be encrypted on disk");
+  assert.doesNotMatch(rawStored, /gsk_test_quickcut_secret_key_12345/);
+  assert.equal(getGroqApiKey(), "gsk_test_quickcut_secret_key_12345");
+
+  // Verify legacy plaintext files are automatically encrypted upon first read
+  fs.writeFileSync(file, "gsk_legacy_plaintext_secret_key_67890\n", { mode: 0o600 });
+  assert.equal(getGroqApiKey(), "gsk_legacy_plaintext_secret_key_67890");
+  assert.match(fs.readFileSync(file, "utf8").trim(), /^qc-enc-v1:/);
+
+  // Verify project snapshot/export sanitizer removes sensitive keys
+  const sanitized = stripSensitiveProjectData({
+    name: "Demo Project",
+    groqApiKey: "gsk_leak",
+    nested: { geminiKey: "AIza_leak", captionText: "Keep me" },
+  });
+  assert.equal(sanitized.groqApiKey, undefined);
+  assert.equal(sanitized.nested.geminiKey, undefined);
+  assert.equal(sanitized.nested.captionText, "Keep me");
+
   clearGroqApiKey();
   assert.equal(groqKeyStatus().configured, false);
   assert.equal(canTranscribe(), false);

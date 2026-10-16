@@ -29,7 +29,7 @@ $TargetDir = if ($OutDir) {
   $fallbackDir
 }
 $ZipPath = Join-Path $TargetDir "快剪-Windows-$Version-测试包.zip"
-$NodeVersion = "22.18.0"
+$NodeVersion = "22.23.3"
 $NodeZipName = "node-v$NodeVersion-win-x64.zip"
 $NodeUrl = "https://nodejs.org/dist/v$NodeVersion/$NodeZipName"
 $LocalFfmpegBin = "C:\ffmpeg-master-latest-win64-gpl-shared\bin"
@@ -341,7 +341,14 @@ if ($env:CI -and -not $iscc) { Fail "Inno Setup is required for release builds."
 
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 Info "Creating $ZipPath"
-Compress-Archive -Path $Stage -DestinationPath $ZipPath -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+  $Stage,
+  $ZipPath,
+  [System.IO.Compression.CompressionLevel]::Optimal,
+  $true,
+  [System.Text.Encoding]::UTF8
+)
 $PortableZip = Join-Path $TargetDir "QuickCut-Windows-$Version-Portable.zip"
 Copy-Item $ZipPath $PortableZip -Force
 

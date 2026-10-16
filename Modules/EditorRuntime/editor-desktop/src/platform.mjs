@@ -482,3 +482,89 @@ export function extractArchive(archive, destination) {
   if (result.status !== 0) throw new Error(result.stderr || "恢复失败。");
   return destination;
 }
+
+const SECRET_PREFIX = "qc-enc-v1:";
+let cachedCipherKey = null;
+
+function localKeystoreKey() {
+  if (cachedCipherKey) return cachedCipherKey;
+  const home = os.homedir() || os.tmpdir();
+  const keyFile = path.join(home, ".quickcut-keystore.key");
+  let seed = "";
+  try {
+    if (fs.existsSync(keyFile)) {
+      seed = fs.readFileSync(keyFile, "utf8").trim();
+    }
+    if (!seed || seed.length < 32) {
+      seed = crypto.randomBytes(32).toString("base64url");
+      fs.writeFileSync(keyFile, seed, { mode: 0o600, encoding: "utf8" });
+    }
+  } catch {
+    seed = "quickcut-fallback-machine-seed";
+  }
+  let user = "";
+  try {
+    user = os.userInfo().username || "";
+  } catch {}
+  const salt = `quickcut-keystore-v1:${os.platform()}:${os.arch()}:${os.hostname()}:${user}`;
+  cachedCipherKey = crypto.scryptSync(seed, salt, 32);
+  return cachedCipherKey;
+}
+
+export function sealLocalSecret(plaintext) {
+  const raw = String(plaintext ?? "").trim();
+  if (!raw) return "";
+  if (raw.startsWith(SECRET_PREFIX)) return raw;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", localKeystoreKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(raw, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${SECRET_PREFIX}${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;
+}
+
+export function openLocalSecret(stored) {
+  const raw = String(stored ?? "").trim();
+  if (!raw) return "";
+  if (!raw.startsWith(SECRET_PREFIX)) return raw;
+  const body = raw.slice(SECRET_PREFIX.length);
+  const parts = body.split(":");
+  if (parts.length !== 3) return "";
+  try {
+    const iv = Buffer.from(parts[0], "base64url");
+    const tag = Buffer.from(parts[1], "base64url");
+    const ciphertext = Buffer.from(parts[2], "base64url");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", localKeystoreKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function writeSecretFile(filePath, plaintext) {
+  const value = String(plaintext ?? "").trim();
+  if (!value) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {}
+    return;
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(filePath, sealLocalSecret(value), { mode: 0o600, encoding: "utf8" });
+}
+
+export function readSecretFile(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    if (!raw) return "";
+    const opened = openLocalSecret(raw);
+    if (opened && !raw.startsWith(SECRET_PREFIX)) {
+      try {
+        writeSecretFile(filePath, opened);
+      } catch {}
+    }
+    return opened;
+  } catch {
+    return "";
+  }
+}

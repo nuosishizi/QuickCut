@@ -1,14 +1,13 @@
 {
   "name": "quickcut-desktop",
-  "version": "2.7.53",
+  "version": "2.7.54",
   "private": true,
   "type": "module",
   "description": "QuickCut local editor for pause cutting, script alignment, captions and multi-track editing.",
   "optionalDependencies": {
     "@napi-rs/whisper": "0.0.4",
     "@napi-rs/whisper-darwin-arm64": "0.0.4",
-    "@napi-rs/whisper-darwin-x64": "0.0.4",
-    "@webviewjs/webview": "0.4.1"
+    "@napi-rs/whisper-darwin-x64": "0.0.4"
   },
   "scripts": {
     "start": "node src/main.mjs",

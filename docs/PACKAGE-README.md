@@ -1,4 +1,4 @@
-# QuickCut 2.7.53 · 运行包
+# QuickCut 2.7.54 · 运行包
 
 Windows：Windows 10/11 x64，使用 Setup.exe 安装，或完整解压 Portable.zip 后双击「快剪.exe」。保留所有子目录；需要系统 Microsoft Edge，无需安装 Node.js、FFmpeg 或开发工具。
 

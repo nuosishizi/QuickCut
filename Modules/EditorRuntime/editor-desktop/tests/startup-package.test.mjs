@@ -86,6 +86,12 @@ test("Windows packaging rejects Chocolatey shims and smoke-tests the shipped FFm
   assert.match(packWindows, /RequiredFilter in @\("afftdn", "arnndn", "crystalizer", "deesser"\)/);
   assert.match(packWindows, /packaged-ffmpeg-smoke\.m4a/);
   assert.match(packWindows, /-f lavfi -i "sine=frequency=440/);
+  assert.match(packWindows, /\[System\.Text\.Encoding\]::UTF8/);
+  const installerIss = fs.readFileSync(path.join(contentsRoot, "installer.iss"), "utf8");
+  const nativePack = fs.readFileSync(path.join(contentsRoot, "scripts", "package-macos.sh"), "utf8");
+  assert.match(nativePack, /MACOSX_DEPLOYMENT_TARGET=13\.0/);
+  assert.match(installerIss, /CloseApplications=force/);
+  assert.match(installerIss, /ArchitecturesInstallIn64BitMode=x64compatible/);
 });
 
 test("installer and launcher validate the runtime bytes actually shipped", { skip: !fs.existsSync(launcherPath) }, () => {

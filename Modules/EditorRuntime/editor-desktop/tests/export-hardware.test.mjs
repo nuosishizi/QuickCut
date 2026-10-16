@@ -125,6 +125,16 @@ test("filtered GPU export skips CUDA decode and treats a silent encoder as stall
     }),
     false,
   );
+  assert.equal(
+    exportIsStalled({
+      state: "exporting",
+      encoder: "h264_nvenc",
+      frameProgress: true,
+      startedAt: Date.now() - 60_000,
+      lastProgressAt: Date.now() - 50_000,
+    }),
+    true,
+  );
 });
 
 test("Intel QSV yields to CPU when DaVinci is using the iGPU", () => {

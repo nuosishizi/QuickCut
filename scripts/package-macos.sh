@@ -6,7 +6,7 @@ cd "$ROOT"
 ARCH="$(uname -m)"
 case "$ARCH" in arm64) NODE_ARCH=arm64;; x86_64) NODE_ARCH=x64;; *) exit 1;; esac
 VERSION="$(node -p "JSON.parse(require('fs').readFileSync('Modules/EditorRuntime/editor-desktop/package.json')).version")"
-NODE_VERSION=22.18.0
+NODE_VERSION=22.23.3
 mkdir -p "${1:-dist}"
 OUT="$(cd "${1:-dist}" && pwd)"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/quickcut-package.XXXXXX")"
@@ -16,7 +16,7 @@ node Modules/EditorRuntime/editor-desktop/src/ui/build.mjs
 zsh scripts/bundle-media-deps.sh
 xcodebuild -quiet -project QuickCut.xcodeproj -scheme QuickCut -configuration Release \
   -derivedDataPath "$STAGE/DerivedData" "ARCHS=$ARCH" ONLY_ACTIVE_ARCH=YES \
-  MACOSX_DEPLOYMENT_TARGET=15.0 CODE_SIGNING_ALLOWED=NO build
+  MACOSX_DEPLOYMENT_TARGET=13.0 CODE_SIGNING_ALLOWED=NO build
 ditto "$STAGE/DerivedData/Build/Products/Release/QuickCut.app" "$APP"
 mkdir -p "$RUNTIME/editor-desktop" "$RUNTIME/runtime" "$RUNTIME/media"
 ditto Modules/EditorRuntime/editor-desktop/src "$RUNTIME/editor-desktop/src"
@@ -54,6 +54,10 @@ mkdir "$STAGE/dmg"
 ditto "$EXTRACTED" "$STAGE/dmg/QuickCut.app"
 ln -s /Applications "$STAGE/dmg/Applications"
 cp docs/PACKAGE-README.md "$STAGE/dmg/READ-ME.txt"
-hdiutil create -volname QuickCut -srcfolder "$STAGE/dmg" -ov -format UDZO "$OUT/QuickCut-macOS-$VERSION-$NODE_ARCH.dmg"
-hdiutil verify "$OUT/QuickCut-macOS-$VERSION-$NODE_ARCH.dmg"
+DMG="$OUT/QuickCut-macOS-$VERSION-$NODE_ARCH.dmg"
+for attempt in 1 2 3; do
+  hdiutil create -volname QuickCut -srcfolder "$STAGE/dmg" -ov -format UDZO "$DMG" && break
+  sleep 2
+done
+hdiutil verify "$DMG"
 echo "Verified macOS $NODE_ARCH packages: $OUT"

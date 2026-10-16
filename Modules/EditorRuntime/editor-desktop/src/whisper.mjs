@@ -16,7 +16,7 @@ import {
 import { captionMatchLineLimit } from "./text-layout.mjs";
 import { mediaBinary, supportRoot } from "./media.mjs";
 import { mapSourceTime, mergeRanges } from "./pausecut.mjs";
-import { extractArchive, isWindows } from "./platform.mjs";
+import { extractArchive, isWindows, readSecretFile, writeSecretFile } from "./platform.mjs";
 import { completeGeminiMedia, geminiMediaReady, loadReviewSettings, reviewReady } from "./ai-settings.mjs";
 import {
   applyJudgeDecisions,
@@ -284,11 +284,7 @@ function maskSecret(value) {
 export function getGroqApiKey() {
   const fromEnv = String(process.env.GROQ_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
-  try {
-    return fs.readFileSync(groqKeyFile(), "utf8").trim();
-  } catch {
-    return "";
-  }
+  return readSecretFile(groqKeyFile());
 }
 
 export function groqKeyStatus() {
@@ -309,16 +305,12 @@ export function saveGroqApiKey(value) {
   const key = String(value || "").replace(/\s+/g, "").trim();
   if (!key) throw new Error("请粘贴 Groq API Key。");
   if (key.length < 20) throw new Error("Groq API Key 看起来不完整。");
-  fs.writeFileSync(groqKeyFile(), key, { mode: 0o600, encoding: "utf8" });
+  writeSecretFile(groqKeyFile(), key);
   return groqKeyStatus();
 }
 
 export function clearGroqApiKey() {
-  try {
-    fs.unlinkSync(groqKeyFile());
-  } catch {
-    /* already absent */
-  }
+  writeSecretFile(groqKeyFile(), "");
   return groqKeyStatus();
 }
 
@@ -331,11 +323,7 @@ function deepgramKeyFile() {
 export function getDeepgramApiKey() {
   const fromEnv = String(process.env.DEEPGRAM_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
-  try {
-    return fs.readFileSync(deepgramKeyFile(), "utf8").trim();
-  } catch {
-    return "";
-  }
+  return readSecretFile(deepgramKeyFile());
 }
 
 export function deepgramKeyStatus() {
@@ -356,16 +344,12 @@ export function saveDeepgramApiKey(value) {
   const key = String(value || "").replace(/\s+/g, "").trim();
   if (!key) throw new Error("请粘贴 Deepgram API Key。");
   if (key.length < 16) throw new Error("Deepgram API Key 看起来不完整。");
-  fs.writeFileSync(deepgramKeyFile(), key, { mode: 0o600, encoding: "utf8" });
+  writeSecretFile(deepgramKeyFile(), key);
   return deepgramKeyStatus();
 }
 
 export function clearDeepgramApiKey() {
-  try {
-    fs.unlinkSync(deepgramKeyFile());
-  } catch {
-    /* already absent */
-  }
+  writeSecretFile(deepgramKeyFile(), "");
   return deepgramKeyStatus();
 }
 

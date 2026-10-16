@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { supportRoot } from "./media.mjs";
+import { readSecretFile, writeSecretFile } from "./platform.mjs";
 
 const GEMINI_API_ROOT = "https://generativelanguage.googleapis.com";
 const INTERACTIONS_PATH = "/v1beta/interactions";
@@ -115,24 +116,11 @@ function maskSecret(value) {
 }
 
 function readSecret(name) {
-  try {
-    return fs.readFileSync(path.join(secretsDir(), name), "utf8").trim();
-  } catch {
-    return "";
-  }
+  return readSecretFile(path.join(secretsDir(), name));
 }
 
 function writeSecret(name, value) {
-  const file = path.join(secretsDir(), name);
-  if (!value) {
-    try {
-      fs.unlinkSync(file);
-    } catch {
-      /* absent */
-    }
-    return;
-  }
-  fs.writeFileSync(file, value, { mode: 0o600, encoding: "utf8" });
+  writeSecretFile(path.join(secretsDir(), name), value);
 }
 
 export function normalizeModelId(value) {
@@ -1317,7 +1305,7 @@ export function openAntigravityLogin() {
   const cli = findAntigravityCli(loadReviewSettings().antigravityPath);
   if (!cli) throw new Error("还没安装 Antigravity CLI。请先点「安装 agy」。");
   if (process.platform === "win32") {
-    const cleanCli = cli.replace(/"/g, "");
+    const cleanCli = path.resolve(cli).replace(/["\r\n%&|<>^]/g, "");
     const batPath = path.join(os.tmpdir(), `quickcut-agy-login-${Date.now()}.bat`);
     const batContent = `@echo off
 chcp 65001 >nul
@@ -1335,7 +1323,7 @@ echo =======================================================
 echo.
 pause
 `;
-    fs.writeFileSync(batPath, batContent, { encoding: "utf8" });
+    fs.writeFileSync(batPath, batContent, { encoding: "utf8", mode: 0o600 });
     spawn("cmd.exe", ["/c", "start", "Antigravity 登录", batPath], {
       detached: true,
       stdio: "ignore",

@@ -1,4 +1,4 @@
-# 快剪 QuickCut 2.7.53
+# 快剪 QuickCut 2.7.54
 
 ## 🚀 全平台封包加固与架构规范化升级
 
@@ -35,7 +35,7 @@
 ---
 
 ## 📦 发布文件
-- Windows 安装版：`QuickCut-Windows-2.7.53-Setup.exe` / `快剪-Windows-2.7.53-安装包.exe`
-- Windows 便携版：`QuickCut-Windows-2.7.53-Portable.zip` / `快剪-Windows-2.7.53-测试包.zip`
-- macOS 安装版：`QuickCut-macOS-2.7.53-Installer.dmg` / `快剪-macOS-2.7.53-安装包.dmg`
-- macOS 便携版：`QuickCut-macOS-2.7.53-Portable.zip` / `快剪-macOS-2.7.53-测试包.zip`
+- Windows 安装版：`QuickCut-Windows-2.7.54-Setup.exe` / `快剪-Windows-2.7.54-安装包.exe`
+- Windows 便携版：`QuickCut-Windows-2.7.54-Portable.zip` / `快剪-Windows-2.7.54-测试包.zip`
+- macOS 安装版：`QuickCut-macOS-2.7.54-Installer.dmg` / `快剪-macOS-2.7.54-安装包.dmg`
+- macOS 便携版：`QuickCut-macOS-2.7.54-Portable.zip` / `快剪-macOS-2.7.54-测试包.zip`
